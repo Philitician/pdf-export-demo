@@ -1,8 +1,8 @@
 "use server";
 
-import { PDFDocument, rgb, PageSizes, type RGB } from "pdf-lib";
+import { PDFDocument, rgb, PageSizes, type RGB, type PDFPage } from "pdf-lib";
 import { parseSync, type INode as SvgsonNode } from "svgson";
-import { drawingNodes, type DrawingNode } from "../drawing-nodes"; // Removed .ts extension
+import { drawingNodes, type DrawingNode } from "../drawing-nodes2"; // Removed .ts extension
 
 const HEADER_HEIGHT = 50;
 const FOOTER_HEIGHT = 40;
@@ -64,15 +64,15 @@ const parseSvgColor = (colorString: string): RGB | undefined => {
   return undefined;
 };
 
-export const generatePDF = async (): Promise<Uint8Array> => {
-  console.dir(PageSizes, { depth: null });
-  // Define source URL and header height
-  const sourcePdfUrl =
-    // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/001a%20Guldmandsveien%2010%201%20og%202etg%20-%20Originaltegning-SM1mhxEf0HDVKQF3AlDeNi5fzhyWpN.pdf";
-    // "https://cdn.prod.website-files.com/5d9c723257629dd37e842f2e/5e41158c97f1efedaf23524a_Om-EFOklasser.pdf";
-    // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/002a%20A22-104%201%20etasje%20%28Planlagt%20status%29-n92loVMORDoH4kMshVi7GcbtjuNyow.pdf";
-    "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/A20-01%20Plan%201%20Etasje-eGLQIjA4naEUmMZie7UlAiOVlIz7ws.pdf";
+// Define source URL and header height
+const sourcePdfUrl =
+  // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/001a%20Guldmandsveien%2010%201%20og%202etg%20-%20Originaltegning-SM1mhxEf0HDVKQF3AlDeNi5fzhyWpN.pdf";
+  // "https://cdn.prod.website-files.com/5d9c723257629dd37e842f2e/5e41158c97f1efedaf23524a_Om-EFOklasser.pdf";
+  // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/002a%20A22-104%201%20etasje%20%28Planlagt%20status%29-n92loVMORDoH4kMshVi7GcbtjuNyow.pdf";
+  // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/A20-01%20Plan%201%20Etasje-eGLQIjA4naEUmMZie7UlAiOVlIz7ws.pdf"
+  "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/MultiPage%20PDF%20File-kXvo5bEjE6ciB9GZeskR6Fb9T7q2O7.pdf";
 
+export const generatePDF = async (): Promise<Uint8Array> => {
   // Fetch the source PDF
   const response = await fetch(sourcePdfUrl);
   if (!response.ok) {
@@ -83,115 +83,22 @@ export const generatePDF = async (): Promise<Uint8Array> => {
   // Load the source PDF
   const sourcePdfDoc = await PDFDocument.load(sourcePdfBytes);
 
-  // Get the first page of the source PDF
-  const [sourcePage] = sourcePdfDoc.getPages();
+  // Get all pages from the source PDF
+  const sourcePages = sourcePdfDoc.getPages();
+  const totalPages = sourcePages.length;
 
-  if (!sourcePage) {
-    throw new Error("No source page found");
+  if (totalPages === 0) {
+    throw new Error("No source pages found");
   }
 
   // Create a new PDFDocument
   const pdfDoc = await PDFDocument.create();
 
-  // Add a new page (A4 Landscape)
-  const targetPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]);
-  const { width: targetWidth, height: targetHeight } = targetPage.getSize();
-
-  // --- Draw Header ---
-  targetPage.drawRectangle({
-    x: 0,
-    y: targetHeight - HEADER_HEIGHT,
-    width: targetWidth,
-    height: HEADER_HEIGHT,
-    color: rgb(0.9, 0.9, 0.9), // Light gray
-  });
-  targetPage.drawText("Document Header", {
-    x: 50,
-    y: targetHeight - HEADER_HEIGHT + 20, // Adjusted for better vertical centering
-    size: 24,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-
-  // --- Draw Sidebar ---
-  targetPage.drawRectangle({
-    x: 0,
-    y: FOOTER_HEIGHT, // Position above the footer
-    width: SIDEBAR_WIDTH,
-    height: targetHeight - HEADER_HEIGHT - FOOTER_HEIGHT, // Full content height
-    color: rgb(0.92, 0.92, 0.92), // Slightly different gray
-  });
-  targetPage.drawText("Sidebar Info", {
-    x: 20,
-    y: targetHeight - HEADER_HEIGHT - 30, // Position near top of sidebar
-    size: 14,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-  targetPage.drawText("Project ID: 123", {
-    x: 20,
-    y: targetHeight - HEADER_HEIGHT - 60, // Below previous text
-    size: 12,
-    color: rgb(0.3, 0.3, 0.3),
-  });
-
-  // --- Draw Footer ---
-  targetPage.drawRectangle({
-    x: 0,
-    y: 0,
-    width: targetWidth,
-    height: FOOTER_HEIGHT,
-    color: rgb(0.9, 0.9, 0.9), // Same gray as header
-  });
-  targetPage.drawText("Page 1", {
-    x: 50,
-    y: FOOTER_HEIGHT / 2 - 6, // Vertically centered
-    size: 12,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-  targetPage.drawText(`Generated: ${new Date().toLocaleDateString()}`, {
-    x: targetWidth - 150, // Position towards the right
-    y: FOOTER_HEIGHT / 2 - 6, // Vertically centered
-    size: 12,
-    color: rgb(0.2, 0.2, 0.2),
-  });
-
-  // --- Embed Source Page ---
-  // Embed the source page
-  const embeddedPage = await pdfDoc.embedPage(sourcePage);
-
-  // Get dimensions of the source page's MediaBox for scaling
-  const { width: sourceWidth, height: sourceHeight } = sourcePage.getMediaBox(); // Use MediaBox dimensions for scaling
-  console.log("sourceWidth", sourceWidth);
-  console.log("sourceHeight", sourceHeight);
-  const availableWidth = targetWidth - SIDEBAR_WIDTH;
-  const availableHeight = targetHeight - HEADER_HEIGHT - FOOTER_HEIGHT;
-
-  // Calculate scaling factor to fit the source page within the content area
-  const scale = Math.min(
-    availableWidth / sourceWidth,
-    availableHeight / sourceHeight
-  );
-  const embeddedWidth = sourceWidth * scale;
-  const embeddedHeight = sourceHeight * scale;
-
-  // Calculate position to draw the embedded page (below header, right of sidebar)
-  const embedX = SIDEBAR_WIDTH;
-  // Position it vertically below the header
-  const embedY = targetHeight - HEADER_HEIGHT - embeddedHeight;
-
-  // Draw the embedded page onto the target page
-  targetPage.drawPage(embeddedPage, {
-    x: embedX,
-    y: embedY,
-    width: embeddedWidth,
-    height: embeddedHeight,
-  });
-
-  // --- Simulate and Draw SVG Overlays ---
-
-  // Helper function to recursively find and draw paths
+  // --- Helper function to recursively find and draw paths (needs targetPage) ---
   const drawPathsFromSvgNode = (
+    targetPage: PDFPage, // Added targetPage parameter
     svgParsedRoot: SvgsonNode,
-    nodeData: DrawingNode, // Changed type to DrawingNode
+    nodeData: DrawingNode,
     baseX: number,
     baseY: number,
     overallScale: number
@@ -202,7 +109,7 @@ export const generatePDF = async (): Promise<Uint8Array> => {
 
     if (svgParsedRoot.name === "svg" && svgParsedRoot.attributes.viewBox) {
       const vbParts = svgParsedRoot.attributes.viewBox
-        .split(/\s*,?\s+/)
+        .split(/\\s*,?\\s+/)
         .map(Number);
       if (vbParts.length === 4 && !vbParts.some(isNaN)) {
         viewBox = {
@@ -212,12 +119,10 @@ export const generatePDF = async (): Promise<Uint8Array> => {
           height: vbParts[3],
         };
         if (viewBox.width > 0 && viewBox.height > 0) {
-          // Use measured size if available, otherwise fallback (though measured should exist)
-          const nodeWidth = nodeData.measured?.width ?? 40; // Default width
-          const nodeHeight = nodeData.measured?.height ?? 40; // Default height
+          const nodeWidth = nodeData.measured?.width ?? 40;
+          const nodeHeight = nodeData.measured?.height ?? 40;
           const targetNodeWidth = nodeWidth * overallScale;
           const targetNodeHeight = nodeHeight * overallScale;
-          // Calculate scale to fit node width/height based on viewBox
           svgScale = Math.min(
             targetNodeWidth / viewBox.width,
             targetNodeHeight / viewBox.height
@@ -225,58 +130,56 @@ export const generatePDF = async (): Promise<Uint8Array> => {
         }
       }
     } else {
-      console.warn("SVG node missing or invalid viewBox, using overall scale");
+      console.warn(
+        `SVG node ${nodeData.id} missing or invalid viewBox, using overall scale`
+      );
     }
 
     // --- Get Node Color ---
-    const nodeColorRgb = COLOR_MAP[nodeData.data.color] || COLOR_MAP["Svart"]; // Access color from node.data.color
+    const nodeColorRgb = COLOR_MAP[nodeData.data.color] || COLOR_MAP["Svart"];
 
     // --- Recursive function to find and draw paths ---
     const findAndDraw = (currentElement: SvgsonNode) => {
       if (currentElement.name === "path" && currentElement.attributes.d) {
         const pathData = currentElement.attributes.d;
-        const pathFill = currentElement.attributes.fill; // Get fill attribute
-        const pathStroke = currentElement.attributes.stroke; // Get stroke attribute
+        const pathFill = currentElement.attributes.fill;
+        const pathStroke = currentElement.attributes.stroke;
 
         let fillColor: RGB | undefined = undefined;
         let strokeColor: RGB | undefined = undefined;
         let useBorderWidth: number | undefined = undefined;
 
-        // Determine fill color for pdf-lib
         if (pathFill === "currentColor") {
           fillColor = nodeColorRgb;
         } else if (pathFill && pathFill !== "none") {
           fillColor = parseSvgColor(pathFill);
-        } // else: fill is 'none' or undefined, leave fillColor undefined
+        }
 
-        // Determine stroke color for pdf-lib
         if (pathStroke === "currentColor") {
           strokeColor = nodeColorRgb;
-          useBorderWidth = 1; // Default border width for currentColor
+          useBorderWidth = 1;
         } else if (pathStroke && pathStroke !== "none") {
           strokeColor = parseSvgColor(pathStroke);
           if (strokeColor) {
-            // Use stroke width from SVG if available, else default
             useBorderWidth = currentElement.attributes["stroke-width"]
               ? parseFloat(currentElement.attributes["stroke-width"])
               : 1;
             if (isNaN(useBorderWidth) || useBorderWidth <= 0)
               useBorderWidth = 1;
           }
-        } // else: stroke is 'none' or undefined, leave strokeColor undefined
+        }
 
-        // Draw the path
+        // Draw the path on the provided targetPage
         targetPage.drawSvgPath(pathData, {
           x: baseX,
           y: baseY,
           scale: svgScale,
           color: fillColor,
           borderColor: strokeColor,
-          borderWidth: useBorderWidth, // Use determined border width
+          borderWidth: useBorderWidth,
         });
       }
 
-      // Recurse through children
       if (currentElement.children && currentElement.children.length > 0) {
         currentElement.children.forEach((child: SvgsonNode) =>
           findAndDraw(child)
@@ -284,32 +187,146 @@ export const generatePDF = async (): Promise<Uint8Array> => {
       }
     };
 
-    // Start the recursive drawing process from the parsed root
     findAndDraw(svgParsedRoot);
   };
 
-  // Draw the SVG representations onto the target page
-  drawingNodes.forEach((node: DrawingNode) => {
-    // Explicitly typed node
-    // Filter nodes for page 1 (or adjust as needed)
+  let firstPageEmbedX = 0;
+  let firstPageEmbedY = 0;
+  let firstPageScale = 1;
+  let firstSourcePageHeight = 0; // Needed for SVG y-coordinate calculation
 
-    // Transform coordinates for the node's origin (top-left SVG to bottom-left PDF)
-    // Use position from node.position and size from node.measured
-    const nodeWidth = node.measured?.width ?? 0; // Use measured width
-    const nodeHeight = node.measured?.height ?? 0; // Use measured height
-    const targetX = embedX + node.position.x * scale;
-    const targetY = embedY + (sourceHeight - node.position.y) * scale; // Adjust Y for node height
+  // --- Loop through each source page ---
+  for (let i = 0; i < totalPages; i++) {
+    const sourcePage = sourcePages[i];
 
-    try {
-      // Parse the SVG string from node.data.svgData
-      const parsedSvg = parseSync(node.data.svgData);
+    // Add a new page (A4 Landscape)
+    const targetPage = pdfDoc.addPage([PageSizes.A4[1], PageSizes.A4[0]]);
+    const { width: targetWidth, height: targetHeight } = targetPage.getSize();
 
-      // Draw paths from this parsed SVG node
-      drawPathsFromSvgNode(parsedSvg, node, targetX, targetY, scale);
-    } catch (error) {
-      console.error("Error parsing or drawing SVG for node:", node.id, error);
+    // --- Draw Header ---
+    targetPage.drawRectangle({
+      x: 0,
+      y: targetHeight - HEADER_HEIGHT,
+      width: targetWidth,
+      height: HEADER_HEIGHT,
+      color: rgb(0.9, 0.9, 0.9),
+    });
+    targetPage.drawText("Document Header", {
+      x: 50,
+      y: targetHeight - HEADER_HEIGHT + 20,
+      size: 24,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+
+    // --- Draw Sidebar ---
+    targetPage.drawRectangle({
+      x: 0,
+      y: FOOTER_HEIGHT,
+      width: SIDEBAR_WIDTH,
+      height: targetHeight - HEADER_HEIGHT - FOOTER_HEIGHT,
+      color: rgb(0.92, 0.92, 0.92),
+    });
+    targetPage.drawText("Sidebar Info", {
+      x: 20,
+      y: targetHeight - HEADER_HEIGHT - 30,
+      size: 14,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+    targetPage.drawText("Project ID: 123", {
+      x: 20,
+      y: targetHeight - HEADER_HEIGHT - 60,
+      size: 12,
+      color: rgb(0.3, 0.3, 0.3),
+    });
+
+    // --- Draw Footer ---
+    targetPage.drawRectangle({
+      x: 0,
+      y: 0,
+      width: targetWidth,
+      height: FOOTER_HEIGHT,
+      color: rgb(0.9, 0.9, 0.9),
+    });
+    targetPage.drawText(`Page ${i + 1} of ${totalPages}`, {
+      // Updated page number
+      x: 50,
+      y: FOOTER_HEIGHT / 2 - 6,
+      size: 12,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+    targetPage.drawText(`Generated: ${new Date().toLocaleDateString()}`, {
+      x: targetWidth - 150,
+      y: FOOTER_HEIGHT / 2 - 6,
+      size: 12,
+      color: rgb(0.2, 0.2, 0.2),
+    });
+
+    // --- Embed Current Source Page ---
+    const embeddedPage = await pdfDoc.embedPage(sourcePage);
+    const { width: sourceWidth, height: sourceHeight } =
+      sourcePage.getMediaBox();
+    const availableWidth = targetWidth - SIDEBAR_WIDTH;
+    const availableHeight = targetHeight - HEADER_HEIGHT - FOOTER_HEIGHT;
+
+    const scale = Math.min(
+      availableWidth / sourceWidth,
+      availableHeight / sourceHeight
+    );
+    const embeddedWidth = sourceWidth * scale;
+    const embeddedHeight = sourceHeight * scale;
+
+    const embedX = SIDEBAR_WIDTH;
+    const embedY = targetHeight - HEADER_HEIGHT - embeddedHeight;
+
+    // Draw the embedded page onto the target page
+    targetPage.drawPage(embeddedPage, {
+      x: embedX,
+      y: embedY,
+      width: embeddedWidth,
+      height: embeddedHeight,
+    });
+
+    // Store parameters for the first page if it's the first iteration
+    if (i === 0) {
+      firstPageEmbedX = embedX;
+      firstPageEmbedY = embedY;
+      firstPageScale = scale;
+      firstSourcePageHeight = sourceHeight; // Store height of the *first* source page
     }
-  });
+  }
+
+  // --- Simulate and Draw SVG Overlays ON THE FIRST PAGE ONLY ---
+  const firstTargetPage = pdfDoc.getPages()[0]; // Get the first page we created
+  if (firstTargetPage && totalPages > 0) {
+    drawingNodes.forEach((node: DrawingNode) => {
+      // Use position from node.position and size from node.measured
+      const nodeWidth = node.measured?.width ?? 0; // Use measured width
+      const nodeHeight = node.measured?.height ?? 0; // Use measured height
+      // Calculate SVG position relative to the *first* embedded page's origin and scale
+      const targetX = firstPageEmbedX + node.position.x * firstPageScale;
+      // Adjust Y based on *first* source page height and overall scale
+      const targetY =
+        firstPageEmbedY +
+        (firstSourcePageHeight - node.position.y) * firstPageScale;
+
+      try {
+        // Parse the SVG string from node.data.svgData
+        const parsedSvg = parseSync(node.data.svgData);
+
+        // Draw paths from this parsed SVG node onto the first target page
+        drawPathsFromSvgNode(
+          firstTargetPage, // Pass the first page
+          parsedSvg,
+          node,
+          targetX,
+          targetY,
+          firstPageScale // Pass the scale used for the first page
+        );
+      } catch (error) {
+        console.error("Error parsing or drawing SVG for node:", node.id, error);
+      }
+    });
+  }
 
   // Serialize the PDFDocument to bytes (a Uint8Array)
   const pdfBytes = await pdfDoc.save();
@@ -318,10 +335,6 @@ export const generatePDF = async (): Promise<Uint8Array> => {
 };
 
 export const generateSvgOnlyPDF = async (): Promise<Uint8Array> => {
-  // Define source URL
-  const sourcePdfUrl =
-    "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/A20-01%20Plan%201%20Etasje-eGLQIjA4naEUmMZie7UlAiOVlIz7ws.pdf";
-
   // Fetch the source PDF
   const response = await fetch(sourcePdfUrl);
   if (!response.ok) {
