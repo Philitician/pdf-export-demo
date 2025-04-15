@@ -69,7 +69,7 @@ const sourcePdfUrl =
   // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/001a%20Guldmandsveien%2010%201%20og%202etg%20-%20Originaltegning-SM1mhxEf0HDVKQF3AlDeNi5fzhyWpN.pdf";
   // "https://cdn.prod.website-files.com/5d9c723257629dd37e842f2e/5e41158c97f1efedaf23524a_Om-EFOklasser.pdf";
   // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/002a%20A22-104%201%20etasje%20%28Planlagt%20status%29-n92loVMORDoH4kMshVi7GcbtjuNyow.pdf";
-  // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/A20-01%20Plan%201%20Etasje-eGLQIjA4naEUmMZie7UlAiOVlIz7ws.pdf"
+  // "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/A20-01%20Plan%201%20Etasje-eGLQIjA4naEUmMZie7UlAiOVlIz7ws.pdf";
   "https://ygmypmwwkcejtqle.public.blob.vercel-storage.com/MultiPage%20PDF%20File-kXvo5bEjE6ciB9GZeskR6Fb9T7q2O7.pdf";
 
 export const generatePDF = async (): Promise<Uint8Array> => {
@@ -193,7 +193,7 @@ export const generatePDF = async (): Promise<Uint8Array> => {
   let firstPageEmbedX = 0;
   let firstPageEmbedY = 0;
   let firstPageScale = 1;
-  let firstSourcePageHeight = 0; // Needed for SVG y-coordinate calculation
+  let firstSourcePageCropHeight = 0; // Use CropBox height for SVG Y calculation
 
   // --- Loop through each source page ---
   for (let i = 0; i < totalPages; i++) {
@@ -262,23 +262,40 @@ export const generatePDF = async (): Promise<Uint8Array> => {
     });
 
     // --- Embed Current Source Page ---
-    const embeddedPage = await pdfDoc.embedPage(sourcePage);
-    const { width: sourceWidth, height: sourceHeight } =
-      sourcePage.getMediaBox();
+    // Get the CropBox first
+    const cropBox = sourcePage.getCropBox();
+
+    // Convert CropBox {x, y, width, height} to PageBoundingBox {left, bottom, right, top}
+    const boundingBox = {
+      left: cropBox.x,
+      bottom: cropBox.y,
+      right: cropBox.x + cropBox.width,
+      top: cropBox.y + cropBox.height,
+    };
+
+    // Embed using the converted boundingBox
+    const embeddedPage = await pdfDoc.embedPage(sourcePage, boundingBox);
+
+    // Get dimensions from the CropBox for scaling calculations
+    const { width: sourceCropWidth, height: sourceCropHeight } = cropBox; // Use the already fetched cropBox
+
     const availableWidth = targetWidth - SIDEBAR_WIDTH;
     const availableHeight = targetHeight - HEADER_HEIGHT - FOOTER_HEIGHT;
 
+    // Calculate scale based on CropBox dimensions
     const scale = Math.min(
-      availableWidth / sourceWidth,
-      availableHeight / sourceHeight
+      availableWidth / sourceCropWidth,
+      availableHeight / sourceCropHeight
     );
-    const embeddedWidth = sourceWidth * scale;
-    const embeddedHeight = sourceHeight * scale;
+    const embeddedWidth = sourceCropWidth * scale;
+    const embeddedHeight = sourceCropHeight * scale;
 
-    const embedX = SIDEBAR_WIDTH;
-    const embedY = targetHeight - HEADER_HEIGHT - embeddedHeight;
+    // Position the bottom-left corner of the scaled CropBox content
+    const embedX = SIDEBAR_WIDTH; // Start after the sidebar
+    // Position vertically centered within the available content area
+    const embedY = FOOTER_HEIGHT + (availableHeight - embeddedHeight) / 2;
 
-    // Draw the embedded page onto the target page
+    // Draw the embedded page (representing the CropBox content) onto the target page
     targetPage.drawPage(embeddedPage, {
       x: embedX,
       y: embedY,
@@ -291,7 +308,7 @@ export const generatePDF = async (): Promise<Uint8Array> => {
       firstPageEmbedX = embedX;
       firstPageEmbedY = embedY;
       firstPageScale = scale;
-      firstSourcePageHeight = sourceHeight; // Store height of the *first* source page
+      firstSourcePageCropHeight = sourceCropHeight; // Store CropBox height
     }
   }
 
@@ -299,15 +316,14 @@ export const generatePDF = async (): Promise<Uint8Array> => {
   const firstTargetPage = pdfDoc.getPages()[0]; // Get the first page we created
   if (firstTargetPage && totalPages > 0) {
     drawingNodes.forEach((node: DrawingNode) => {
-      // Use position from node.position and size from node.measured
-      const nodeWidth = node.measured?.width ?? 0; // Use measured width
-      const nodeHeight = node.measured?.height ?? 0; // Use measured height
       // Calculate SVG position relative to the *first* embedded page's origin and scale
+      // Use the stored CropBox-based values
       const targetX = firstPageEmbedX + node.position.x * firstPageScale;
-      // Adjust Y based on *first* source page height and overall scale
+      // Adjust Y based on the *first* source page's CropBox height and overall scale
       const targetY =
         firstPageEmbedY +
-        (firstSourcePageHeight - node.position.y) * firstPageScale;
+        (firstSourcePageCropHeight - node.position.y) * firstPageScale -
+        firstPageScale;
 
       try {
         // Parse the SVG string from node.data.svgData
@@ -350,7 +366,14 @@ export const generateSvgOnlyPDF = async (): Promise<Uint8Array> => {
   if (!targetPage) {
     throw new Error("No source page found to draw on");
   }
-  const { width: sourceWidth, height: sourceHeight } = targetPage.getMediaBox();
+  // const { width: sourceWidth, height: sourceHeight } = targetPage.getMediaBox();
+  // Use CropBox instead of MediaBox for coordinate calculations
+  const {
+    x: cropX,
+    y: cropY,
+    width: cropWidth,
+    height: cropHeight,
+  } = targetPage.getCropBox();
 
   // --- Replicate Helper Function for SVG Drawing (as it needs the targetPage) ---
   const drawPathsFromSvgNode = (
@@ -463,12 +486,6 @@ export const generateSvgOnlyPDF = async (): Promise<Uint8Array> => {
           color: fillColor,
           borderColor: strokeColor,
           borderWidth: useBorderWidth,
-          // Adjustments based on viewBox origin might be needed if not (0,0)
-          // x: baseX - (viewBox.x * svgScale),
-          // y: baseY - (viewBox.y * svgScale),
-          // The y-coordinate needs careful handling if viewBox.y is non-zero
-          // as PDF Y increases upwards and SVG Y increases downwards.
-          // Might need: y: baseY + ((viewBox.height - viewBox.y) * svgScale) // or similar adjustment
         });
       }
 
@@ -484,11 +501,11 @@ export const generateSvgOnlyPDF = async (): Promise<Uint8Array> => {
 
   // --- Draw SVG Nodes onto the source page ---
   drawingNodes.forEach((node: DrawingNode) => {
-    const nodeWidth = node.measured?.width ?? 0;
-    const nodeHeight = node.measured?.height ?? 0;
-    const targetX = node.position.x; // Use position directly
+    // Position relative to the CropBox origin (bottom-left corner of the crop area)
+    const targetX = cropX + node.position.x; // X relative to cropBox.x
     // Adjust Y for PDF origin (bottom-left) vs SVG node origin (top-left)
-    const targetY = sourceHeight - node.position.y;
+    // Y position is relative to the bottom of the cropBox + adjusted for PDF Y-up direction
+    const targetY = cropY + cropHeight - node.position.y;
 
     try {
       const parsedSvg = parseSync(node.data.svgData);
