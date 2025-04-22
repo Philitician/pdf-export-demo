@@ -1,4 +1,9 @@
 import { generatePDF, generateSvgOnlyPDF } from "./_actions";
+import {
+  generateCustomFontAction,
+  generateDefaultFontAction,
+  generateGeistFontAction,
+} from "./_font-actions";
 import { DownloadButton } from "./download-button";
 
 export default function Home() {
@@ -19,6 +24,27 @@ export default function Home() {
             className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-green-600 text-white gap-2 hover:bg-green-700 font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Download PDF (SVG Only)
+          </DownloadButton>
+
+          <DownloadButton
+            action={generateCustomFontAction}
+            downloadFilename="generated-custom-font.pdf"
+          >
+            Download PDF (custom Font)
+          </DownloadButton>
+
+          <DownloadButton
+            action={generateDefaultFontAction}
+            downloadFilename="generated-default-font.pdf"
+          >
+            Download PDF (default Font)
+          </DownloadButton>
+
+          <DownloadButton
+            action={generateGeistFontAction}
+            downloadFilename="generated-geist-font.pdf"
+          >
+            Download PDF (Geist Font)
           </DownloadButton>
         </div>
       </main>
